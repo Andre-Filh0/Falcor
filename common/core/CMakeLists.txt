@@ -22,10 +22,6 @@ find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(ZMQ REQUIRED libzmq)
 
-# --- Configuração do Qt6 ---
-set(QT_DIR_SEARCH "${ARM_DEPS}/usr/lib/aarch64-linux-gnu/cmake/Qt6")
-find_package(Qt6 REQUIRED COMPONENTS Core Bluetooth PATHS ${QT_DIR_SEARCH} NO_DEFAULT_PATH)
-
 # --- Definição da Biblioteca ---
 add_library(FalcorCore STATIC
     src/Framework.hpp
@@ -39,8 +35,6 @@ target_include_directories(FalcorCore PUBLIC
 
 # Linkagem das dependências
 target_link_libraries(FalcorCore PUBLIC 
-    Qt6::Core 
-    Qt6::Bluetooth
     ${ZMQ_LIBRARIES}
     quill::quill
     Threads::Threads
