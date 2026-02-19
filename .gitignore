@@ -1,0 +1,26 @@
+# --- Compilação e Binários ---
+# Ignora as pastas onde o CMake gera os arquivos de build e o executável final
+out/
+build/
+bin/
+*.o
+*.out
+*.exe
+
+# --- IDEs e Configurações Pessoais ---
+# Ignora pastas específicas do VS Code e Visual Studio que não devem ser compartilhadas
+.vscode/
+.vs/
+*.user
+*.suo
+*.db
+
+# --- Instaladores e Pacotes Pesados ---
+# Como você vai colocar o .deb na 'Release', ignore-o aqui para não pesar o git
+*.deb
+*.zip
+*.tar.gz
+
+# --- Temporários do Sistema ---
+.DS_Store
+Thumbs.db
