@@ -1,13 +1,13 @@
 # common/components/CMakeLists.txt
 
 # --- Busca Dinâmica do Delta SDK ---
-# O find_path procurará por 'delta/dmvc.h' dentro do ARM_SYSROOT/include
+# Procuramos por dmvc/dmvc.h para validar que o sysroot está correto
 find_path(DELTA_INCLUDE_DIR 
-    NAMES delta/dmvc.h
-    DOC "Caminho para os headers da Delta"
+    NAMES dmvc/dmvc.h
+    DOC "Caminho para a raiz dos headers (onde reside a pasta dmvc)"
 )
 
-# O find_library procurará por 'libdmvc-c.so' no ARM_SYSROOT/lib
+# Busca a biblioteca compilada
 find_library(DELTA_LIB 
     NAMES dmvc-c
     DOC "Caminho para a biblioteca libdmvc-c"
@@ -18,20 +18,22 @@ file(GLOB COMP_SOURCES "src/*.cpp")
 
 add_library(FalcorComponents STATIC ${COMP_SOURCES})
 
-# Configura os diretórios de include
+# Configura os diretórios de include locais
 target_include_directories(FalcorComponents PUBLIC "src")
 
-# Se o SDK da Delta foi encontrado, adiciona os caminhos
+# Se o SDK da Delta foi encontrado, adiciona os caminhos globais
 if(DELTA_INCLUDE_DIR AND DELTA_LIB)
-    message(STATUS "[COMPONENTS] Delta SDK localizado!")
+    message(STATUS "[COMPONENTS] Delta SDK localizado com sucesso em: ${DELTA_INCLUDE_DIR}")
+    
+    # Adicionamos DELTA_INCLUDE_DIR para que o código use #include "dmvc/dmvc.h"
     target_include_directories(FalcorComponents PUBLIC ${DELTA_INCLUDE_DIR})
 else()
-    message(WARNING "[COMPONENTS] Delta SDK não encontrado. Verifique se os arquivos .h e .so estão no Sysroot.")
+    message(WARNING "[COMPONENTS] Delta SDK não encontrado. Verifique se renomeou a pasta para 'dmvc' no sysroot.")
 endif()
 
 # --- Linkagem ---
 # PUBLIC FalcorCore: Componentes herdam tudo do Core
-# PRIVATE ${DELTA_LIB}: Componentes usam a Delta internamente
+# PRIVATE ${DELTA_LIB}: Linkagem da biblioteca da Delta
 target_link_libraries(FalcorComponents 
     PUBLIC FalcorCore
     PRIVATE ${DELTA_LIB}

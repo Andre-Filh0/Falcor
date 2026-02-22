@@ -14,11 +14,11 @@ set(CMAKE_FIND_ROOT_PATH ${ARM_SYSROOT} /usr/aarch64-linux-gnu)
 set(CMAKE_LIBRARY_PATH ${ARM_SYSROOT})
 set(CMAKE_STAGING_PREFIX /usr/aarch64-linux-gnu)
 
-# Modos de busca: NEVER para programas (usa os do PC), ONLY para libs/includes (usa os ARM64)
+# Modos de busca: NEVER para programas (do PC), ONLY para libs/includes (ARM64)
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-# Garante que o linker encontre dependências indiretas (bibliotecas que outras bibliotecas usam)
+# Garante que o linker encontre dependências indiretas no sysroot
 set(CMAKE_EXE_LINKER_FLAGS "-Wl,-rpath-link,${ARM_SYSROOT}" CACHE STRING "" FORCE)
