@@ -5,43 +5,44 @@
 
 #include "quill/Quill.h"
 #include "quill/Logger.h"
-
 #include <string>
-#include <iostream>
 #include <utility>
 #include <string_view>
 #include <mutex>
-#include <chrono>
-#include <ctime>
 #include <source_location>
+#include <memory> 
 
 namespace Falcor {
 
+/**
+ * @brief Inicialização do backend.
+ */
 inline void ensure_quill_started() {
     static std::once_flag flag;
-    std::call_once(flag, []() { quill::start(); });
-}
-
-namespace Color {
-    inline constexpr std::string_view Reset      = "\033[0m";
-    inline constexpr std::string_view Dim        = "\033[90m";   
-    inline constexpr std::string_view Bold       = "\033[1m";
-    inline constexpr std::string_view Blue       = "\033[34m";   
-    inline constexpr std::string_view Cyan       = "\033[36m";   
-    inline constexpr std::string_view Red        = "\033[91m";   
-    inline constexpr std::string_view Magenta    = "\033[35m";   
-    inline constexpr std::string_view File       = "\033[38;5;242m"; 
+    std::call_once(flag, []() {
+        quill::start();
+    });
 }
 
 /**
- * @brief Estrutura para capturar a string de formato E a localização.
- * Isso resolve o conflito de templates com argumentos variádicos.
+ * @brief Cores ANSI para o terminal.
  */
+namespace Color {
+    inline constexpr std::string_view Reset     = "\033[0m";
+    inline constexpr std::string_view Bold      = "\033[1m";
+    inline constexpr std::string_view Debug     = "\033[38;5;226m";  // Amarelo Vivo
+    inline constexpr std::string_view Info      = "\033[38;5;75m";   
+    inline constexpr std::string_view Warn      = "\033[38;5;215m";  
+    inline constexpr std::string_view Error     = "\033[38;5;196m";  
+    inline constexpr std::string_view Critical  = "\033[38;5;197m";  // Vermelho Claro/Brilhante
+    inline constexpr std::string_view Gray      = "\033[38;5;243m";  
+    inline constexpr std::string_view Divider   = "\033[38;5;238m";  
+}
+
 struct LogFormat {
     std::string_view fmt;
     std::source_location loc;
 
-    // Construtor implícito para aceitar strings e capturar a origem
     LogFormat(const char* s, std::source_location l = std::source_location::current())
         : fmt(s), loc(l) {}
         
@@ -49,80 +50,100 @@ struct LogFormat {
         : fmt(s), loc(l) {}
 };
 
-class Logger {
+class LoggerBase {
 public:
-    explicit Logger(quill::Logger* p_logger) : m_logger(p_logger) {
+    explicit LoggerBase(quill::Logger* p_logger) : m_logger(p_logger) {
         ensure_quill_started();
     }
 
-    virtual ~Logger() = default;
+    virtual ~LoggerBase() = default;
+
+    template <typename... Args>
+    void log_debug(LogFormat format, Args&&... args) {
+        if (m_logger) {
+            std::string msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
+            QUILL_LOG_DEBUG(m_logger, "{} {} {}|{} {}{}{}", 
+                decorate_debug(), format_loc(format.loc), Color::Divider, Color::Debug, Color::Bold, msg, Color::Reset);
+        }
+    }
 
     template <typename... Args>
     void log_info(LogFormat format, Args&&... args) {
-        std::string raw_msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
-        
-        std::cout << decorate_info() << format_loc(format.loc) << " " << raw_msg << Color::Reset << std::endl;
-
-        if (m_logger) QUILL_LOG_INFO(m_logger, "[{}:{}] {}", format.loc.file_name(), format.loc.line(), raw_msg);
+        if (m_logger) {
+            std::string msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
+            QUILL_LOG_INFO(m_logger, "{} {} {}|{} {}", 
+                decorate_info(), format_loc(format.loc), Color::Divider, Color::Reset, msg);
+        }
     }
 
     template <typename... Args>
     void log_error(LogFormat format, Args&&... args) {
-        std::string raw_msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
+        if (m_logger) {
+            std::string msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
+            QUILL_LOG_ERROR(m_logger, "{} {} {}|{} {}{}{}", 
+                decorate_error(), format_loc(format.loc), Color::Divider, Color::Error, Color::Bold, msg, Color::Reset);
+        }
+    }
 
-        std::cerr << decorate_error() << format_loc(format.loc) << " " << Color::Bold << raw_msg << Color::Reset << std::endl;
-
-        if (m_logger) QUILL_LOG_ERROR(m_logger, "[{}:{}] {}", format.loc.file_name(), format.loc.line(), raw_msg);
+    template <typename... Args>
+    void log_critical(LogFormat format, Args&&... args) {
+        if (m_logger) {
+            std::string msg = fmtquill::v10::format(fmtquill::v10::runtime(format.fmt), std::forward<Args>(args)...);
+            QUILL_LOG_CRITICAL(m_logger, "{} {} {}|{} {}{}{}", 
+                decorate_critical(), format_loc(format.loc), Color::Divider, Color::Critical, Color::Bold, msg, Color::Reset);
+        }
     }
 
 protected:
+    virtual std::string decorate_debug() = 0;
     virtual std::string decorate_info() = 0;
     virtual std::string decorate_error() = 0;
+    virtual std::string decorate_critical() = 0;
 
     inline std::string format_loc(const std::source_location& loc) const {
         std::string_view file = loc.file_name();
         auto last_slash = file.find_last_of("\\/");
         if (last_slash != std::string_view::npos) file.remove_prefix(last_slash + 1);
         
-        return fmtquill::v10::format(" {}{}:{}{}", Color::File, file, loc.line(), Color::Reset);
-    }
-
-    inline std::string get_timestamp() const {
-        auto now = std::chrono::system_clock::now();
-        auto in_time_t = std::chrono::system_clock::to_time_t(now);
-        std::tm tm_struct;
-        localtime_r(&in_time_t, &tm_struct);
-
-        return fmtquill::v10::format("{}[{:02d}/{:02d}/{} {:02d}:{:02d}:{:02d}]{}", 
-            Color::Dim, tm_struct.tm_mday, tm_struct.tm_mon + 1, tm_struct.tm_year + 1900,
-            tm_struct.tm_hour, tm_struct.tm_min, tm_struct.tm_sec, Color::Reset);
+        return fmtquill::v10::format("{}{:<12}:{:>3}{}", Color::Gray, file, loc.line(), Color::Reset);
     }
 
 private:
     quill::Logger* m_logger;
 };
 
-class GeneralLogger : public Logger {
-public: using Logger::Logger;
+class GeneralLogger : public LoggerBase {
+public: 
+    using LoggerBase::LoggerBase;
 protected:
-    std::string decorate_info() override { 
-        return fmtquill::v10::format("{} {}{}[INFO]{}", get_timestamp(), Color::Bold, Color::Cyan, Color::Reset); 
+    std::string decorate_debug() override { 
+        return fmtquill::v10::format("{}[ DEBUG ]{}", Color::Debug, Color::Reset); 
     }
+    std::string decorate_info() override { 
+        return fmtquill::v10::format("{}[ INFO  ]{}", Color::Info, Color::Reset); 
+    }
+    // Mantive o nome interno como ERROR para bater com a gravidade do Quill, mas você pode mudar o texto para WARN se preferir
     std::string decorate_error() override { 
-        return fmtquill::v10::format("{} {}{}[WARN]{}", get_timestamp(), Color::Bold, Color::Red, Color::Reset); 
+        return fmtquill::v10::format("{}[ ERROR ]{}", Color::Error, Color::Reset); 
+    }
+    std::string decorate_critical() override { 
+        return fmtquill::v10::format("{}[ CRIT  ]{}", Color::Critical, Color::Reset); 
     }
 };
 
-class SystemLogger : public Logger {
-public: using Logger::Logger;
-protected:
-    std::string decorate_info() override { 
-        return fmtquill::v10::format("{} {}{}[SYS ]{}", get_timestamp(), Color::Bold, Color::Blue, Color::Reset); 
-    }
-    std::string decorate_error() override { 
-        return fmtquill::v10::format("{} {}{}[CRIT]{}", get_timestamp(), Color::Bold, Color::Magenta, Color::Reset); 
-    }
-};
+inline quill::Logger* create_clean_logger(std::string const& name)
+{
+    ensure_quill_started();
+    auto handler = quill::stdout_handler();
+    handler->set_pattern(
+        "%(ascii_time) %(message)",
+        "%H:%M:%S",
+        quill::Timezone::LocalTime
+    );
+    return quill::create_logger(name, std::move(handler));
+}
+
+inline Falcor::GeneralLogger Logger(create_clean_logger("GENERAL"));
 
 } // namespace Falcor
 

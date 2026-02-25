@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ComponentSystem.hpp"
+#include "vendors/ImplCameraComponent_DMV_SDK.hpp"
 
 namespace Falcor::Components {
 

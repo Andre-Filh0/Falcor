@@ -14,7 +14,10 @@ find_library(DELTA_LIB
 )
 
 # --- Definição da Biblioteca de Componentes ---
-file(GLOB COMP_SOURCES "src/*.cpp")
+file(GLOB_RECURSE COMP_SOURCES
+    "src/*.cpp"
+    "vendors/*.cpp"
+)
 
 add_library(FalcorComponents STATIC ${COMP_SOURCES})
 
