@@ -1,5 +1,8 @@
 #include "ImplCameraComponent_DMV_SDK.hpp"
 
+// Certifique-se de incluir o cabeçalho do seu executor CLI
+// #include "SuaPasta/SystemCLI.hpp" 
+
 // ============================================================
 // Constructor / Destructor
 // ============================================================
@@ -17,127 +20,75 @@ ImplCameraComponent_DMV_SDK::~ImplCameraComponent_DMV_SDK()
 // ============================================================
 // CONNECT
 // ============================================================
-// ============================================================
-// CONNECT
-// ============================================================
-
 CameraStatus ImplCameraComponent_DMV_SDK::connect(const CameraConfig& config)
 {
-    if (m_connected.load())
-        return CameraStatus::AlreadyConnected;
+    if (m_connected.load()) return CameraStatus::AlreadyConnected;
 
     m_config = config;
+    const char* targetIP = m_config.protocol.GigE.camera_ip_str;
+
+    Falcor::Logger.log_info("[DMV_SDK] Iniciando conexao para o IP alvo: {}", targetIP);
+
     resetHandles();
+    DcError err = DcSystemCreate(&m_system);
+    if (err != DC_ERROR_SUCCESS) return CameraStatus::InternalError;
 
-    DcError err;
+    // Atualiza interfaces de rede
+    DcSystemUpdateInterfaceList(m_system, nullptr, DC_INFINITE);
+    DcSystemGetInterfaceCount(m_system, &m_interface_count);
 
-    // 1️⃣ Create system
-    err = DcSystemCreate(&m_system);
-    if (err != DC_ERROR_SUCCESS)
-    {
-        Falcor::Logger.log_error("DcSystemCreate failed.");
-        return CameraStatus::InternalError;
-    }
-
-    // 2️⃣ Update interface list
-    err = DcSystemUpdateInterfaceList(m_system, nullptr, DC_INFINITE);
-    if (err != DC_ERROR_SUCCESS)
-    {
-        cleanupSystem();
-        return CameraStatus::InternalError;
-    }
-
-    err = DcSystemGetInterfaceCount(m_system, &m_interface_count);
-    if (err != DC_ERROR_SUCCESS || m_interface_count == 0)
-    {
-        Falcor::Logger.log_error("Nenhuma interface de rede encontrada pelo SDK.");
-        cleanupSystem();
-        return CameraStatus::NotConnected;
-    }
-
-    // 3️⃣ Iterate interfaces
+    // Loop pelas interfaces físicas do Kria
     for (uint32_t i = 0; i < m_interface_count; ++i)
     {
         err = DcSystemGetInterface(m_system, i, &m_interface);
-        if (err != DC_ERROR_SUCCESS)
-            continue;
+        if (err != DC_ERROR_SUCCESS) continue;
 
-        err = DcInterfaceOpen(m_interface);
-        if (err != DC_ERROR_SUCCESS)
-        {
-            m_interface = nullptr;
-            continue;
-        }
+        if (DcInterfaceOpen(m_interface) != DC_ERROR_SUCCESS) continue;
 
+        // Procura dispositivos nesta interface específica
         DcInterfaceUpdateDeviceList(m_interface, nullptr, DEVICE_LIST_UPDATE_TIMEOUT);
         DcInterfaceGetDeviceCount(m_interface, &m_device_count);
 
-        if (m_device_count == 0)
+        for (uint32_t j = 0; j < m_device_count; ++j)
         {
-            DcInterfaceClose(m_interface);
-            m_interface = nullptr;
-            continue;
-        }
+            err = DcInterfaceGetDevice(m_interface, j, &m_device);
+            if (err != DC_ERROR_SUCCESS) continue;
 
-        // Try first device
-        err = DcInterfaceGetDevice(m_interface, 0, &m_device);
-        if (err != DC_ERROR_SUCCESS)
-        {
-            Falcor::Logger.log_error("Falha ao pegar o device 0 na interface {}. Erro: {}", i, err);
-            DcInterfaceClose(m_interface);
-            m_interface = nullptr;
-            continue;
-        }
+            // --- Lógica de Filtro por IP ---
+            char discoveredIP[256] = { 0 };
+            size_t size = sizeof(discoveredIP);
+            
+            // Acessando o IP do dispositivo antes de abrir a conexão de controle
+            DcNodeList nodelist;
+            if (DcDeviceGetNodeList(m_device, &nodelist) == DC_ERROR_SUCCESS) {
+                 DcNodeListGetValue(nodelist, "GevDeviceIPAddress", discoveredIP, &size);
+            }
 
-        // --- VERIFICAÇÃO DE IP ---
-        DcNodeList nodelist;
-        DcNode node;
-        DcIntegerNode device_selector;
-        char camIP[256] = { 0 };
-        char macAddr[256] = { 0 };
-        size_t size = sizeof(camIP);
+            // Se o IP descoberto NÃO for o IP que passamos no main, ignoramos este device
+            if (std::string(discoveredIP) != std::string(targetIP)) {
+                m_device = nullptr; 
+                continue; 
+            }
 
-        // Pega as informações da câmera através dos Nodes
-        if (DcInterfaceGetNodeList(m_interface, &nodelist) == DC_ERROR_SUCCESS) {
-            if (DcNodeListGetNode(nodelist, "DeviceSelector", &node) == DC_ERROR_SUCCESS) {
-                device_selector = DcNodeCastToIntegerNode(node);
-                DcIntegerNodeSetValue(device_selector, 0); // Seleciona o device 0
-                
-                size = sizeof(camIP);
-                DcNodeListGetValue(nodelist, "GevDeviceIPAddress", camIP, &size);
-                
-                size = sizeof(macAddr);
-                DcNodeListGetValue(nodelist, "GevDeviceMACAddress", macAddr, &size);
+            // Se chegamos aqui, o IP bate! Agora testamos reachability
+            std::string pingCmd = "ping -c 1 -W 1 " + std::string(discoveredIP) + " > /dev/null 2>&1";
+            Falcor::System::CLI::executeCLICommand(pingCmd.c_str());
 
-                Falcor::Logger.log_info("================================");
-                Falcor::Logger.log_info("Câmera encontrada na rede!");
-                Falcor::Logger.log_info("IP da Câmera: {}", camIP);
-                Falcor::Logger.log_info("MAC da Câmera: {}", macAddr);
-                Falcor::Logger.log_info("================================");
+            // Tenta abrir o controle da câmera
+            err = DcDeviceOpen(m_device, DC_DEVICE_ACCESS_TYPE_CONTROL);
+            if (err == DC_ERROR_SUCCESS)
+            {
+                m_connected.store(true);
+                Falcor::Logger.log_info("[DMV_SDK] Camera {} encontrada e conectada!", discoveredIP);
+                return CameraStatus::Ok;
             }
         }
-
-        // Tenta abrir a câmera. É AQUI que falha se os IPs não baterem
-        err = DcDeviceOpen(m_device, DC_DEVICE_ACCESS_TYPE_CONTROL);
-        if (err != DC_ERROR_SUCCESS)
-        {
-            Falcor::Logger.log_error("Falha no DcDeviceOpen. Erro: {}", err);
-            Falcor::Logger.log_error("VERIFIQUE: O IP do Ubuntu (Kria) está na mesma sub-rede do IP da Câmera ({})?", camIP);
-            
-            m_device = nullptr;
-            DcInterfaceClose(m_interface);
-            m_interface = nullptr;
-            continue;
-        }
-
-        // 🎉 SUCCESS
-        m_connected.store(true);
-        Falcor::Logger.log_info("DMV camera connected successfully.");
-        return CameraStatus::Ok;
+        
+        DcInterfaceClose(m_interface);
+        m_interface = nullptr;
     }
 
-    // ❌ No device found
-    Falcor::Logger.log_error("Fim do loop de interfaces. Nenhuma câmera pôde ser aberta.");
+    Falcor::Logger.log_error("[DMV_SDK] Erro: Camera com IP {} nao foi encontrada na rede.", targetIP);
     cleanupSystem();
     return CameraStatus::NotConnected;
 }
@@ -169,7 +120,7 @@ void ImplCameraComponent_DMV_SDK::disconnect()
 
     m_connected.store(false);
 
-    Falcor::Logger.log_info("DMV camera disconnected.");
+    Falcor::Logger.log_info("[DMV_SDK] Device disconnected successfully.");
 }
 
 // ============================================================

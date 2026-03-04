@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Logger.hpp"
+#include "System.hpp"
 #include "../interfaces/ICameraComponent.hpp"
 #include "dmvc/dmvc.h"
 

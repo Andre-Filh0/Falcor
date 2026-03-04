@@ -1,11 +1,10 @@
 # pipeline/CMakeLists.txt
 file(GLOB PIPE_SOURCES "src/*.cpp")
 
-add_executable(Falcor ${PIPE_SOURCES})
+# Transformamos em library em vez de executable
+add_library(FalcorPipeline STATIC ${PIPE_SOURCES})
 
-# Ao linkar com FalcorCore (que agora tem ZMQ como PUBLIC), 
-# o executável deve herdar tudo automaticamente.
-target_link_libraries(Falcor PRIVATE 
+target_link_libraries(FalcorPipeline PUBLIC 
     FalcorComponents
     FalcorCore
 )

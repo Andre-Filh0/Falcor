@@ -40,6 +40,16 @@ enum class CameraStatus
     InternalError
 };
 
+struct GigEVisionProtocol {
+   
+    const char* camera_ip_str; 
+    
+    const char* interface;
+};
+
+struct CameraProtocol {
+    GigEVisionProtocol GigE;
+};
 // ============================================================
 // Frame Metadata
 // ============================================================
@@ -79,24 +89,14 @@ struct RawFrame
 // Camera Configuration
 // ============================================================
 
+
 struct CameraConfig
 {
+    CameraProtocol protocol;
     uint32_t width;
     uint32_t height;
     PixelFormat format;
     uint32_t fps;
-
-    CameraConfig(
-        uint32_t w,
-        uint32_t h,
-        PixelFormat fmt,
-        uint32_t framesPerSecond
-    )
-        : width(w),
-          height(h),
-          format(fmt),
-          fps(framesPerSecond)
-    {}
 };
 
 // ============================================================
