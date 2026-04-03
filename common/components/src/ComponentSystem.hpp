@@ -9,76 +9,86 @@
 #include <typeindex>
 #include <utility>
 #include <type_traits>
+#include <stdexcept>
 
 namespace Falcor::Components {
 
-    /**
-     * @brief Interface Base para todos os componentes do Falcor.
-     */
     class IComponent {
     public:
         virtual ~IComponent() = default;
 
     protected:
-        // Métodos de ciclo de vida protegidos
         virtual void initialize() {}
         virtual void shutdown() {}
 
         friend class ComponentRegistry;
     };
 
-    /**
-     * @brief Gerenciador Central de Ciclo de Vida (Registry).
-     * Responsável por garantir Singletons e gerenciar a memória no Kria KR260.
-     */
     class ComponentRegistry {
     private:
-        // BUG FIX #9: Use std::type_index as key to avoid typeid().hash_code() collisions.
+        // BUG FIX #9: std::type_index como chave — sem colisoes de hash.
         inline static std::unordered_map<std::type_index, std::shared_ptr<IComponent>> m_registry_table;
         inline static std::mutex m_registry_mutex;
-        // BUG FIX #2: Use std::atomic to prevent data races during static initialisation.
+        // BUG FIX #2: atomic para evitar data race na inicializacao estatica.
         inline static std::atomic<size_t> m_discovery_counter{0};
 
     public:
-        /**
-         * @brief Reserva memória para o mapa para evitar realocações em tempo de execução.
-         */
         static void reserve_memory(size_t pool_size);
-
         static void notify_discovery();
         static size_t get_discovered_count();
 
         /**
-         * @brief Obtém ou cria uma instância única de um componente.
-         * Se argumentos forem passados, chama automaticamente o método 'configure'.
+         * @brief Cria, configura (se args), inicializa e registra o componente.
+         *
+         * Ciclo de vida completo: instanciacao -> configure() -> initialize() -> registry.
+         * Lanca std::logic_error se o componente ja foi criado anteriormente.
+         *
+         * @throws std::logic_error  se o componente ja existe no registry.
+         * @throws qualquer excecao lancada por initialize() (ex: falha de hardware).
          */
         template <typename TComponent, typename... Args>
-        static TComponent* get_or_create(Args&&... args) {
-            static_assert(std::is_base_of_v<IComponent, TComponent>, "TComponent must inherit from IComponent");
+        static TComponent* create(Args&&... args) {
+            static_assert(std::is_base_of_v<IComponent, TComponent>,
+                "TComponent precisa herdar de IComponent");
 
-            // BUG FIX #9: Use std::type_index — guaranteed unique per type, no hash collisions.
-            const std::type_index component_id{typeid(TComponent)};
-
+            const std::type_index id{typeid(TComponent)};
             std::lock_guard<std::mutex> lock(m_registry_mutex);
 
-            auto& component_ptr = m_registry_table[component_id];
+            if (m_registry_table.count(id))
+                throw std::logic_error(
+                    std::string("ComponentRegistry::create — componente ja existe: ") +
+                    typeid(TComponent).name());
 
-            if (!component_ptr) {
-                // 1. Instantiation
-                auto instance = std::make_shared<TComponent>();
+            auto instance = std::make_shared<TComponent>();
 
-                // 2. Perfect-forward arguments to configure() if provided
-                if constexpr (sizeof...(args) > 0) {
-                    instance->configure(std::forward<Args>(args)...);
-                }
+            if constexpr (sizeof...(args) > 0)
+                instance->configure(std::forward<Args>(args)...);
 
-                // 3. Automatic lifecycle initialisation
-                instance->initialize();
+            instance->initialize();
 
-                component_ptr = instance;
-            }
+            m_registry_table[id] = instance;
+            return static_cast<TComponent*>(instance.get());
+        }
 
-            return static_cast<TComponent*>(component_ptr.get());
+        /**
+         * @brief Busca um componente ja registrado.
+         *
+         * Nao tem efeito colateral — nao cria, nao inicializa.
+         * Retorna nullptr se o componente nao existir.
+         */
+        template <typename TComponent>
+        static TComponent* get() {
+            static_assert(std::is_base_of_v<IComponent, TComponent>,
+                "TComponent precisa herdar de IComponent");
+
+            const std::type_index id{typeid(TComponent)};
+            std::lock_guard<std::mutex> lock(m_registry_mutex);
+
+            auto it = m_registry_table.find(id);
+            if (it == m_registry_table.end())
+                return nullptr;
+
+            return static_cast<TComponent*>(it->second.get());
         }
 
         /**
@@ -88,7 +98,7 @@ namespace Falcor::Components {
     };
 
     /**
-     * @brief CRTP base class for automatic component type registration.
+     * @brief CRTP base — notifica o registry na primeira instanciacao do tipo.
      */
     template<typename T>
     class CComponent : public IComponent {
@@ -102,12 +112,31 @@ namespace Falcor::Components {
         }();
     };
 
+    // ----------------------------------------------------------------
+    // API publica — funcoes livres para uso no codigo da aplicacao
+    // ----------------------------------------------------------------
+
     /**
-     * @brief Global shortcut for fast component access.
+     * @brief Cria e inicializa um componente. Lanca se ja existir.
+     *
+     * Uso tipico (startup):
+     *   auto* cam = CreateComponent<CCameraComponent>(CameraType::DMV_CAMERA, config);
      */
     template <typename T, typename... Args>
-    inline T* GetOrCreateComponent(Args&&... args) {
-        return ComponentRegistry::get_or_create<T>(std::forward<Args>(args)...);
+    inline T* CreateComponent(Args&&... args) {
+        return ComponentRegistry::create<T>(std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Busca um componente ja criado. Retorna nullptr se nao existir.
+     *
+     * Uso tipico (runtime):
+     *   auto* cam = GetComponent<CCameraComponent>();
+     *   if (cam) cam->getVideoBuffer();
+     */
+    template <typename T>
+    inline T* GetComponent() {
+        return ComponentRegistry::get<T>();
     }
 
 } // namespace Falcor::Components

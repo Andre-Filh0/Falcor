@@ -56,8 +56,12 @@ struct CameraProtocol {
 
 struct FrameMetadata
 {
-    uint64_t timestamp = 0;
-    uint32_t frameId   = 0;
+    uint64_t timestamp  = 0;
+    uint32_t frameId    = 0;
+
+    // Preenchido pelo VitisAIStep apos inferencia no DPU.
+    // 0.0f = ainda nao processado.
+    float    weight_kg  = 0.0f;
 };
 
 // ============================================================

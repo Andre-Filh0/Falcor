@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <chrono>
 #include <thread>
+#include <optional>
 #include "ComponentSystem.hpp"
 #include "Logger.hpp"
 #include "interfaces/ICameraComponent.hpp"
@@ -27,7 +28,12 @@ public:
 
     void initialize() override;
     void shutdown() override;
-    void getVideoBuffer();
+
+    /**
+     * @brief Captura um frame da camera.
+     * @return Frame capturado, ou std::nullopt em caso de timeout ou erro.
+     */
+    std::optional<RawFrame> getVideoBuffer();
 
 private:
     // Padrao: DMV. Mock so e usado quando explicitamente solicitado.

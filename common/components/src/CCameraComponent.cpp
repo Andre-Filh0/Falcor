@@ -103,12 +103,12 @@ void CCameraComponent::shutdown()
     }
 }
 
-void CCameraComponent::getVideoBuffer()
+std::optional<RawFrame> CCameraComponent::getVideoBuffer()
 {
     if (!m_cameraImpl || !m_cameraImpl->isStreaming())
     {
         Falcor::Logger.log_warning("[CCameraComponent] Camera nao esta em streaming.");
-        return;
+        return std::nullopt;
     }
 
     RawFrame frame;
@@ -117,22 +117,22 @@ void CCameraComponent::getVideoBuffer()
     if (status == CameraStatus::Ok)
     {
         Falcor::Logger.log_info(
-            "[CCameraComponent] Frame #{} recebido: {} bytes, {}x{}",
+            "[CCameraComponent] Frame #{} capturado: {} bytes, {}x{}",
             frame.metadata.frameId,
             frame.data.size(),
             frame.width,
             frame.height
         );
+        return frame;
     }
-    else if (status == CameraStatus::Timeout)
-    {
+
+    if (status == CameraStatus::Timeout)
         Falcor::Logger.log_warning("[CCameraComponent] Timeout ao capturar frame.");
-    }
     else
-    {
         Falcor::Logger.log_error("[CCameraComponent] Falha ao capturar frame (status={}).",
             static_cast<int>(status));
-    }
+
+    return std::nullopt;
 }
 
 } // namespace Falcor::Components
