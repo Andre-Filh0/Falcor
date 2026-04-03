@@ -1,35 +1,39 @@
 #pragma once
-#include <stdexcept> // Para std::runtime_error
+#include <stdexcept>
+#include <chrono>
+#include <thread>
 #include "ComponentSystem.hpp"
 #include "Logger.hpp"
-// Se a pasta 'interfaces' estiver no mesmo nível da 'src'
 #include "interfaces/ICameraComponent.hpp"
 
 namespace Falcor::Components {
 
-class CCameraComponent : public Falcor::Components::CComponent<CCameraComponent> {
+class CCameraComponent : public CComponent<CCameraComponent> {
 public:
     enum class CameraType {
-        DMV_CAMERA,    
+        DMV_CAMERA,
         USB_GENERIC_CAMERA,
-        MOCK_CAMERA        
+        MOCK_CAMERA
     };
 
-    // Construtor padrão (exigido pelo ComponentRegistry atual)
-    CCameraComponent();
-    virtual ~CCameraComponent(); 
+    // Tentativas de reconexao e intervalo entre elas
+    static constexpr int kMaxConnectRetries  = 5;
+    static constexpr int kRetryDelayMs       = 2000;
 
-    // Método para configurar o componente ANTES do initialize
+    CCameraComponent();
+    ~CCameraComponent() override;
+
     void configure(CameraType type, CameraConfig config);
 
-    void initialize() override; 
+    void initialize() override;
     void shutdown() override;
     void getVideoBuffer();
 
 private:
-    CameraType m_selectedType = CameraType::MOCK_CAMERA;
-    CameraConfig m_cameraConfig;
-    std::unique_ptr<ICameraComponent> m_cameraImpl; // Ponteiro para a interface
+    // Padrao: DMV. Mock so e usado quando explicitamente solicitado.
+    CameraType m_selectedType = CameraType::DMV_CAMERA;
+    CameraConfig m_cameraConfig{};
+    std::unique_ptr<ICameraComponent> m_cameraImpl;
 };
 
 }

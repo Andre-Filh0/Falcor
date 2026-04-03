@@ -1,3 +1,5 @@
+#pragma once
+
 namespace Falcor::System {
     namespace CLI {
         // Mudamos para 'bool' para o resto do programa decidir se para ou continua

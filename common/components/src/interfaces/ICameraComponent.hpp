@@ -40,11 +40,11 @@ enum class CameraStatus
     InternalError
 };
 
+// BUG FIX #8: Use std::string instead of const char* to prevent dangling pointers
+// when callers pass a temporary std::string::c_str().
 struct GigEVisionProtocol {
-   
-    const char* camera_ip_str; 
-    
-    const char* interface;
+    std::string camera_ip;
+    std::string interface_name;
 };
 
 struct CameraProtocol {

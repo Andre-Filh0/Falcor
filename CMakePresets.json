@@ -1,35 +1,53 @@
-﻿{
-    "version": 3,
-    "configurePresets": [
-        {
-            "name": "base-linux",
-            "hidden": true,
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}"
-        },
-        {
-            "name": "linux-x64-debug",
-            "displayName": "Linux Local (Debug)",
-            "description": "Build para rodar no seu WSL atual",
-            "inherits": "base-linux",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_INSTALL_CONFIG_NAME": "debug-x64",
-                "CMAKE_CXX_COMPILER": "g++",
-                "CMAKE_C_COMPILER": "gcc"
-            }
-        },
-        {
-            "name": "linux-kria-release",
-            "displayName": "Kria KR260 (Release)",
-            "description": "Cross-compilação para Kria KR260 (ARM64)",
-            "inherits": "base-linux",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/kriakr260.cmake",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_INSTALL_CONFIG_NAME": "release-kria"
-            }
-        }
-    ]
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "out/build/${presetName}"
+    },
+    {
+      "name": "linux-x64-debug",
+      "displayName": "PC — Debug (x86_64)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FALCOR_USE_DELTA_SDK": "OFF"
+      }
+    },
+    {
+      "name": "linux-x64-release",
+      "displayName": "PC — Release (x86_64)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FALCOR_USE_DELTA_SDK": "OFF"
+      }
+    },
+    {
+      "name": "linux-kria-release",
+      "displayName": "Kria KR260 — Release (aarch64)",
+      "inherits": "base",
+      "toolchainFile": "cmake/toolchains/kriakr260.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FALCOR_USE_DELTA_SDK": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-x64-debug",
+      "configurePreset": "linux-x64-debug"
+    },
+    {
+      "name": "linux-x64-release",
+      "configurePreset": "linux-x64-release"
+    },
+    {
+      "name": "linux-kria-release",
+      "configurePreset": "linux-kria-release"
+    }
+  ]
 }

@@ -1,42 +1,24 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(FalcorCore LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_AUTOMOC ON) 
-# AJUSTE 1: Garante que o CMake encontre os arquivos gerados pelo MOC
-set(CMAKE_INCLUDE_CURRENT_DIR ON) 
 
-# --- Quill (Logging) via FetchContent ---
-include(FetchContent)
-FetchContent_Declare(
-  quill
-  GIT_REPOSITORY https://github.com/odygrd/quill.git
-  GIT_TAG v3.7.0
-)
-FetchContent_MakeAvailable(quill)
-
-# --- Dependências ---
 find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
 
-pkg_check_modules(ZMQ REQUIRED libzmq)
+# cppzmq engloba libzmq + zmq.hpp e exporta o target 'cppzmq'
+# (ZeroMQ::ZeroMQ nao existe no config do nixpkgs/zeromq 4.x)
+find_package(cppzmq CONFIG REQUIRED)
 
-# --- Definição da Biblioteca ---
-add_library(FalcorCore STATIC
-    src/Framework.hpp
-)
+find_package(quill CONFIG REQUIRED)
 
-# Inclusão de diretórios de headers
-target_include_directories(FalcorCore PUBLIC 
-    src
-    ${ZMQ_INCLUDE_DIRS}
-)
+# FalcorCore e header-only — INTERFACE propaga includes e deps sem compilar nada.
+add_library(FalcorCore INTERFACE)
 
-# Linkagem das dependências
-target_link_libraries(FalcorCore PUBLIC 
-    ${ZMQ_LIBRARIES}
-    quill::quill
+target_include_directories(FalcorCore INTERFACE src)
+
+target_link_libraries(FalcorCore INTERFACE
     Threads::Threads
+    cppzmq
+    quill::quill
 )

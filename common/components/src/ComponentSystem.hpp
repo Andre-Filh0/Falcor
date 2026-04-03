@@ -4,7 +4,8 @@
 #include <unordered_map>
 #include <cstdint>
 #include <memory>
-#include <mutex> 
+#include <mutex>
+#include <atomic>
 #include <typeindex>
 #include <utility>
 #include <type_traits>
@@ -28,21 +29,22 @@ namespace Falcor::Components {
 
     /**
      * @brief Gerenciador Central de Ciclo de Vida (Registry).
-     * Responsável por garantir Singletons e gerenciar a memória no Kria KV260.
+     * Responsável por garantir Singletons e gerenciar a memória no Kria KR260.
      */
     class ComponentRegistry {
     private:
-        // Armazenamento central dos componentes
-        inline static std::unordered_map<size_t, std::shared_ptr<IComponent>> m_registry_table;
+        // BUG FIX #9: Use std::type_index as key to avoid typeid().hash_code() collisions.
+        inline static std::unordered_map<std::type_index, std::shared_ptr<IComponent>> m_registry_table;
         inline static std::mutex m_registry_mutex;
-        inline static size_t m_discovery_counter = 0;
+        // BUG FIX #2: Use std::atomic to prevent data races during static initialisation.
+        inline static std::atomic<size_t> m_discovery_counter{0};
 
     public:
         /**
          * @brief Reserva memória para o mapa para evitar realocações em tempo de execução.
          */
         static void reserve_memory(size_t pool_size);
-        
+
         static void notify_discovery();
         static size_t get_discovered_count();
 
@@ -52,24 +54,25 @@ namespace Falcor::Components {
          */
         template <typename TComponent, typename... Args>
         static TComponent* get_or_create(Args&&... args) {
-            static_assert(std::is_base_of_v<IComponent, TComponent>, "T deve herdar de IComponent");
+            static_assert(std::is_base_of_v<IComponent, TComponent>, "TComponent must inherit from IComponent");
 
-            const size_t component_id = typeid(TComponent).hash_code();
+            // BUG FIX #9: Use std::type_index — guaranteed unique per type, no hash collisions.
+            const std::type_index component_id{typeid(TComponent)};
 
             std::lock_guard<std::mutex> lock(m_registry_mutex);
-            
+
             auto& component_ptr = m_registry_table[component_id];
-            
+
             if (!component_ptr) {
-                // 1. Instanciação
+                // 1. Instantiation
                 auto instance = std::make_shared<TComponent>();
 
-                // 2. Perfect Forwarding para o método configure (se houver argumentos)
+                // 2. Perfect-forward arguments to configure() if provided
                 if constexpr (sizeof...(args) > 0) {
                     instance->configure(std::forward<Args>(args)...);
                 }
 
-                // 3. Inicialização automática (conforme solicitado)
+                // 3. Automatic lifecycle initialisation
                 instance->initialize();
 
                 component_ptr = instance;
@@ -85,7 +88,7 @@ namespace Falcor::Components {
     };
 
     /**
-     * @brief Classe CRTP para registro automático de tipos.
+     * @brief CRTP base class for automatic component type registration.
      */
     template<typename T>
     class CComponent : public IComponent {
@@ -100,10 +103,11 @@ namespace Falcor::Components {
     };
 
     /**
-     * @brief Atalho global para acesso rápido aos componentes.
+     * @brief Global shortcut for fast component access.
      */
     template <typename T, typename... Args>
     inline T* GetOrCreateComponent(Args&&... args) {
         return ComponentRegistry::get_or_create<T>(std::forward<Args>(args)...);
     }
-}
+
+} // namespace Falcor::Components

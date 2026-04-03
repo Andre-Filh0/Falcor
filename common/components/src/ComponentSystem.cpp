@@ -5,44 +5,43 @@ namespace Falcor::Components {
     void ComponentRegistry::reserve_memory(size_t pool_size) {
         std::lock_guard<std::mutex> lock(m_registry_mutex);
         m_registry_table.reserve(pool_size);
-        std::cout << "[Falcor] Registry: Pool de memoria reservado para " << pool_size << " componentes." << std::endl;
+        std::cout << "[Falcor] Registry: memory pool reserved for " << pool_size << " components." << std::endl;
     }
 
     void ComponentRegistry::notify_discovery() {
-        // Incremento atômico implícito por ser chamado no contexto de inicialização estática
-        m_discovery_counter++;
+        // BUG FIX #2: atomic fetch_add — safe to call from concurrent static initialisers.
+        m_discovery_counter.fetch_add(1, std::memory_order_relaxed);
     }
 
     size_t ComponentRegistry::get_discovered_count() {
-        return m_discovery_counter;
+        return m_discovery_counter.load(std::memory_order_relaxed);
     }
 
     void ComponentRegistry::shutdown_all() {
         std::lock_guard<std::mutex> lock(m_registry_mutex);
-        
-        std::cout << "[Falcor] Registry: Iniciando limpeza segura do sistema..." << std::endl;
 
-        // Itera e encerra cada componente
+        std::cout << "[Falcor] Registry: starting safe system shutdown..." << std::endl;
+
         for (auto it = m_registry_table.begin(); it != m_registry_table.end(); ) {
             auto& instance = it->second;
 
             if (instance) {
-                // Log de aviso caso existam referências perdidas (Dangling pointers)
                 if (instance.use_count() > 1) {
-                    std::cout << "[Falcor] Alerta: '" << typeid(*instance).name() 
-                              << "' ainda possui " << (instance.use_count() - 1) 
-                              << " referencia(s) externa(s) ativa(s)!" << std::endl;
+                    std::cout << "[Falcor] Warning: '" << it->first.name()
+                              << "' still has " << (instance.use_count() - 1)
+                              << " external reference(s) alive!" << std::endl;
                 }
 
-                // Chama o shutdown virtual da implementação
+                // BUG FIX #8: shutdown() is called here by the registry.
+                // Components must NOT call shutdown() from their own destructor
+                // to avoid double-shutdown. See CCameraComponent.
                 instance->shutdown();
             }
-            
-            // Remove do mapa e libera a memória
+
             it = m_registry_table.erase(it);
         }
-        
-        std::cout << "[Falcor] ComponentRegistry: Shutdown completo. Memoria liberada." << std::endl;
+
+        std::cout << "[Falcor] ComponentRegistry: shutdown complete." << std::endl;
     }
 
 } // namespace Falcor::Components
