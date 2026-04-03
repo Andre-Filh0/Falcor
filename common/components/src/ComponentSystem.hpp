@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <unordered_map>
+#include <vector>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -26,11 +27,15 @@ namespace Falcor::Components {
 
     class ComponentRegistry {
     private:
-        // BUG FIX #9: std::type_index como chave — sem colisoes de hash.
+        // std::type_index como chave — sem colisoes de hash.
         inline static std::unordered_map<std::type_index, std::shared_ptr<IComponent>> m_registry_table;
         inline static std::mutex m_registry_mutex;
-        // BUG FIX #2: atomic para evitar data race na inicializacao estatica.
+        // Atomic para evitar data race na inicializacao estatica do CRTP.
         inline static std::atomic<size_t> m_discovery_counter{0};
+        // Registra a ordem de criacao dos componentes.
+        // shutdown_all() itera em ordem reversa para garantir que
+        // dependencias sejam encerradas antes dos componentes que as usam.
+        inline static std::vector<std::type_index> m_creation_order;
 
     public:
         static void reserve_memory(size_t pool_size);
@@ -67,6 +72,7 @@ namespace Falcor::Components {
             instance->initialize();
 
             m_registry_table[id] = instance;
+            m_creation_order.push_back(id); // registra posicao para shutdown ordenado
             return static_cast<TComponent*>(instance.get());
         }
 

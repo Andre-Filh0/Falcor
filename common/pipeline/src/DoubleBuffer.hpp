@@ -36,15 +36,24 @@ public:
      * Bloqueia ate timeout se nao houver frame disponivel.
      * Thread-safe. Chamado pela pipeline.
      *
-     * @return true se um frame foi retirado, false em timeout.
+     * @return true se um frame foi retirado, false em timeout ou wakeup.
      */
     bool consume(RawFrame& outFrame, std::chrono::milliseconds timeout);
 
+    /**
+     * @brief Acorda o consumidor imediatamente (ex: ao encerrar a pipeline).
+     *
+     * Apos wakeup(), consume() retorna false assim que o buffer esvaziar,
+     * sem esperar o timeout completo.
+     */
+    void wakeup();
+
 private:
     std::array<RawFrame, 2> m_slots;
-    int                     m_head{0};   // pipeline le daqui
-    int                     m_tail{0};   // camera escreve aqui
-    int                     m_count{0};  // frames disponiveis (0, 1 ou 2)
+    int                     m_head{0};    // pipeline le daqui
+    int                     m_tail{0};    // camera escreve aqui
+    int                     m_count{0};   // frames disponiveis (0, 1 ou 2)
+    bool                    m_wakeup{false}; // sinaliza encerramento
 
     std::mutex              m_mutex;
     std::condition_variable m_notEmpty;  // pipeline espera aqui

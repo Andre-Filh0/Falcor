@@ -18,7 +18,12 @@ bool DoubleBuffer::consume(RawFrame& outFrame, std::chrono::milliseconds timeout
 {
     std::unique_lock<std::mutex> lock(m_mutex);
 
-    if (!m_notEmpty.wait_for(lock, timeout, [this] { return m_count > 0; }))
+    // Acorda se ha frame disponivel OU se wakeup() foi chamado (encerramento).
+    if (!m_notEmpty.wait_for(lock, timeout, [this] { return m_count > 0 || m_wakeup; }))
+        return false;
+
+    // Wakeup sem frames pendentes: sinaliza encerramento ao consumidor.
+    if (m_count == 0)
         return false;
 
     outFrame = std::move(m_slots[m_head]);
@@ -27,4 +32,13 @@ bool DoubleBuffer::consume(RawFrame& outFrame, std::chrono::milliseconds timeout
 
     m_notFull.notify_one();
     return true;
+}
+
+void DoubleBuffer::wakeup()
+{
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_wakeup = true;
+    }
+    m_notEmpty.notify_all(); // acorda consume() imediatamente
 }

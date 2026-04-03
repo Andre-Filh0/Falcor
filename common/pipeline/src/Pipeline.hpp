@@ -31,6 +31,11 @@ public:
 private:
     void processingLoop();
 
+    // m_configMutex protege m_steps e m_outputHandler.
+    // addStep() e setOutputHandler() podem ser chamados apos start() —
+    // o mutex garante visibilidade correta na thread de processamento.
+    mutable std::mutex                          m_configMutex;
+
     std::vector<std::unique_ptr<IPipelineStep>> m_steps;
     FrameCallback                               m_outputHandler;
     DoubleBuffer                                m_buffer;

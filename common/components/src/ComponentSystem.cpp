@@ -20,28 +20,41 @@ namespace Falcor::Components {
     void ComponentRegistry::shutdown_all() {
         std::lock_guard<std::mutex> lock(m_registry_mutex);
 
-        std::cout << "[Falcor] Registry: starting safe system shutdown..." << std::endl;
+        std::cout << "[Falcor] Registry: iniciando shutdown ordenado ("
+                  << m_creation_order.size() << " componente(s))..." << std::endl;
 
-        for (auto it = m_registry_table.begin(); it != m_registry_table.end(); ) {
-            auto& instance = it->second;
+        // Itera em ordem REVERSA de criacao:
+        // o ultimo componente criado e encerrado primeiro.
+        // Exemplo: Pipeline criada antes da Camera →
+        //          Camera encerra primeiro (para de enviar frames),
+        //          depois Pipeline (drena buffer e encerra thread).
+        for (auto it = m_creation_order.rbegin(); it != m_creation_order.rend(); ++it)
+        {
+            auto mapIt = m_registry_table.find(*it);
+            if (mapIt == m_registry_table.end())
+                continue;
 
-            if (instance) {
+            auto& instance = mapIt->second;
+            if (instance)
+            {
                 if (instance.use_count() > 1) {
-                    std::cout << "[Falcor] Warning: '" << it->first.name()
-                              << "' still has " << (instance.use_count() - 1)
-                              << " external reference(s) alive!" << std::endl;
+                    std::cout << "[Falcor] Aviso: '"
+                              << it->name()
+                              << "' ainda tem " << (instance.use_count() - 1)
+                              << " referencia(s) externa(s) viva(s)." << std::endl;
                 }
 
-                // BUG FIX #8: shutdown() is called here by the registry.
-                // Components must NOT call shutdown() from their own destructor
-                // to avoid double-shutdown. See CCameraComponent.
+                // O registry chama shutdown() — componentes NAO devem
+                // chamar shutdown() no proprio destrutor (double-shutdown).
                 instance->shutdown();
             }
 
-            it = m_registry_table.erase(it);
+            m_registry_table.erase(mapIt);
         }
 
-        std::cout << "[Falcor] ComponentRegistry: shutdown complete." << std::endl;
+        m_creation_order.clear();
+
+        std::cout << "[Falcor] ComponentRegistry: shutdown completo." << std::endl;
     }
 
 } // namespace Falcor::Components

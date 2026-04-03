@@ -6,12 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(FALCOR_USE_VITIS_AI "Habilitar inferencia Vitis AI DPU (apenas Kria KR260)" OFF)
 
-# Fontes base da pipeline
+# ── Fontes base da pipeline (sempre compiladas) ───────────────────────────────
 set(PIPE_SOURCES
     src/DoubleBuffer.cpp
-    src/Pipeline.cpp
+    src/pipeline.cpp
     src/CPipelineComponent.cpp
-    src/steps/VitisAIStep.cpp
+    # InferenceStep: step generico (usa IInferenceBackend)
+    src/inference/InferenceStep.cpp
+    # VitisAI backend (passthrough quando FALCOR_USE_VITIS_AI=OFF)
+    src/inference/backends/VitisAIBackend.cpp
 )
 
 add_library(FalcorPipeline STATIC ${PIPE_SOURCES})
@@ -19,6 +22,8 @@ add_library(FalcorPipeline STATIC ${PIPE_SOURCES})
 target_include_directories(FalcorPipeline PUBLIC
     src
     src/steps
+    src/inference
+    src/inference/backends
 )
 
 target_link_libraries(FalcorPipeline PUBLIC
@@ -26,6 +31,7 @@ target_link_libraries(FalcorPipeline PUBLIC
     FalcorCore
 )
 
+# ── Vitis AI (opcional, apenas Kria KR260) ───────────────────────────────────
 if(FALCOR_USE_VITIS_AI)
     find_path(VITIS_AI_INCLUDE_DIR
         NAMES vart/runner.hpp
@@ -48,5 +54,5 @@ if(FALCOR_USE_VITIS_AI)
     target_link_libraries(FalcorPipeline PRIVATE ${VART_LIB} ${XIR_LIB} ${TARGET_FACTORY})
     target_compile_definitions(FalcorPipeline PUBLIC FALCOR_HAVE_VITIS_AI)
 else()
-    message(STATUS "[PIPELINE] Vitis AI desativado — VitisAIStep em modo passthrough")
+    message(STATUS "[PIPELINE] Vitis AI desativado — VitisAIBackend em modo passthrough")
 endif()

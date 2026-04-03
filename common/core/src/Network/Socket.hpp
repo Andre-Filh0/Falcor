@@ -2,10 +2,10 @@
 
 #include <zmq.hpp>
 #include <string>
-#include <iostream>
 #include <vector>
 #include <filesystem>
 #include <optional>
+#include "Logger.hpp"
 
 namespace fs = std::filesystem;
 
@@ -69,9 +69,8 @@ public:
                 return TBuffer(static_cast<const char*>(msg.data()), msg.size());
             }
         } catch (const zmq::error_t& e) {
-            if (e.num() != EAGAIN) {
-                std::cerr << "[Falcor-Net] Erro no Get: " << e.what() << std::endl;
-            }
+            if (e.num() != EAGAIN)
+                Falcor::SysLog.log_error("[Net] Erro em recv(): {}", e.what());
         }
         return std::nullopt;
     }
@@ -96,22 +95,20 @@ private:
 
         try {
             if (m_config.isBind) {
-                if (m_config.protocol == NetProtocol::IPC && fs::exists(ipcPath)) {
-                    fs::remove(ipcPath); // Limpeza automática
-                }
+                if (m_config.protocol == NetProtocol::IPC && fs::exists(ipcPath))
+                    fs::remove(ipcPath); // Limpeza automatica de socket IPC anterior
                 m_socket.bind(addr);
-                std::cout << "[Net] BIND: " << addr << std::endl;
+                Falcor::SysLog.log_info("[Net] BIND: {}", addr);
             } else {
                 m_socket.connect(addr);
-                std::cout << "[Net] CONNECT: " << addr << std::endl;
-            }
-            
-            if (m_config.socketType == SocketType::SUB) {
-                m_socket.set(zmq::sockopt::subscribe, "");
+                Falcor::SysLog.log_info("[Net] CONNECT: {}", addr);
             }
 
+            if (m_config.socketType == SocketType::SUB)
+                m_socket.set(zmq::sockopt::subscribe, "");
+
         } catch (const zmq::error_t& e) {
-            std::cerr << "[Net] Erro Start: " << e.what() << std::endl;
+            Falcor::SysLog.log_error("[Net] Falha ao iniciar socket ({}): {}", addr, e.what());
         }
     }
 };
