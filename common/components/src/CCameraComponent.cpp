@@ -7,31 +7,29 @@
 
 namespace Falcor::Components {
 
-CCameraComponent::CCameraComponent() = default;
-
-// BUG FIX #8: Destrutor NAO chama shutdown().
-// ComponentRegistry::shutdown_all() ja chama shutdown() em todos os componentes.
+CCameraComponent::CCameraComponent()  = default;
 CCameraComponent::~CCameraComponent() = default;
 
 void CCameraComponent::configure(CameraType type, CameraConfig config)
 {
     Falcor::Logger.log_info(
-        "[CCameraComponent] Configurando camera. Type={}, Resolucao={}x{}",
-        static_cast<int>(type),
-        config.width,
-        config.height
-    );
+        "[CCameraComponent] Configurando camera. Type={}, {}x{} @ {} fps",
+        static_cast<int>(type), config.width, config.height, config.fps);
 
     m_selectedType = type;
     m_cameraConfig = config;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// initialize — retry infinito até câmera conectar
+// ─────────────────────────────────────────────────────────────────────────────
 
 void CCameraComponent::initialize()
 {
     if (m_cameraImpl && m_cameraImpl->isConnected())
         return;
 
-    // Instancia a implementacao correta
+    // Instancia a implementação correta
     switch (m_selectedType)
     {
         case CameraType::DMV_CAMERA:
@@ -41,7 +39,7 @@ void CCameraComponent::initialize()
             throw std::runtime_error(
                 "CCameraComponent: DMV_CAMERA solicitado mas o projeto foi compilado "
                 "sem o Delta SDK (FALCOR_USE_DELTA_SDK=OFF). "
-                "Use o preset 'linux-kria-release' ou force MOCK_CAMERA para testes no PC.");
+                "Use MOCK_CAMERA para testes ou o preset 'linux-kria-release' na Kria.");
 #endif
             break;
 
@@ -53,55 +51,97 @@ void CCameraComponent::initialize()
             throw std::runtime_error("CCameraComponent: tipo de camera nao suportado.");
     }
 
-    // Tentativas de conexao com retry
-    CameraStatus connectStatus = CameraStatus::InternalError;
+    // ── Loop de descoberta e conexão ─────────────────────────────────────────
+    // Tenta conectar indefinidamente a cada kRetryIntervalMs.
+    // Para sistemas embarcados, é esperado que o operador ligue a câmera
+    // antes ou logo após ligar o sistema. O pipeline não inicia sem a câmera.
 
-    for (int attempt = 1; attempt <= kMaxConnectRetries; ++attempt)
+    int attempt = 0;
+
+    while (true)
     {
-        Falcor::Logger.log_info(
-            "[CCameraComponent] Tentativa de conexao {}/{}...", attempt, kMaxConnectRetries);
+        ++attempt;
 
-        connectStatus = m_cameraImpl->connect(m_cameraConfig);
+        // Antes de tentar a conexão por IP, faz uma varredura de rede
+        // para descobrir câmeras disponíveis e logar o que foi encontrado.
+#ifdef FALCOR_HAVE_DELTA_SDK
+        if (m_selectedType == CameraType::DMV_CAMERA)
+        {
+            Falcor::Logger.log_info(
+                "[CCameraComponent] Tentativa #{} — Varrendo rede em busca de cameras Delta...",
+                attempt);
+
+            auto found = ImplCameraComponent_DMV_SDK::enumerateCameras();
+            if (found.empty())
+            {
+                Falcor::Logger.log_warning(
+                    "[CCameraComponent] Nenhuma camera Delta encontrada na rede. "
+                    "Verifique cabos e alimentacao na porta {}.",
+                    m_cameraConfig.protocol.GigE.interface_name);
+            }
+            else
+            {
+                Falcor::Logger.log_info(
+                    "[CCameraComponent] {} camera(s) visivel(is) na rede:", found.size());
+                for (const auto& cam : found)
+                {
+                    Falcor::Logger.log_info(
+                        "   Modelo: {}  |  Serial: {}  |  IP: {}  |  MAC: {}",
+                        cam.model, cam.serial, cam.ip, cam.mac);
+                }
+            }
+        }
+#endif
+
+        // Tentativa de conexão pelo IP configurado
+        Falcor::Logger.log_info(
+            "[CCameraComponent] Tentativa #{} — Conectando em {}...",
+            attempt, m_cameraConfig.protocol.GigE.camera_ip);
+
+        CameraStatus connectStatus = m_cameraImpl->connect(m_cameraConfig);
 
         if (connectStatus == CameraStatus::Ok)
         {
-            Falcor::Logger.log_info("[CCameraComponent] Camera '{}' conectada.",
+            Falcor::Logger.log_info("[CCameraComponent] Camera '{}' conectada com sucesso!",
                 m_cameraImpl->getCameraName());
-            break;
+            break; // sai do loop
         }
 
+        // Falha: loga o motivo e aguarda antes de tentar de novo
         Falcor::Logger.log_warning(
-            "[CCameraComponent] Falha na tentativa {}/{} (status={}). "
-            "Aguardando {}ms antes de tentar novamente...",
-            attempt, kMaxConnectRetries,
+            "[CCameraComponent] Tentativa #{} falhou (status={}). "
+            "Proxima tentativa em {} segundos...",
+            attempt,
             static_cast<int>(connectStatus),
-            kRetryDelayMs);
+            kRetryIntervalMs / 1000);
 
-        if (attempt < kMaxConnectRetries)
-            std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryIntervalMs));
     }
 
-    if (connectStatus != CameraStatus::Ok)
-        throw std::runtime_error(
-            "CCameraComponent: camera nao respondeu apos todas as tentativas de conexao.");
-
-    // Iniciar stream
+    // ── Inicia o stream após conexão ─────────────────────────────────────────
     CameraStatus streamStatus = m_cameraImpl->startStream();
     if (streamStatus != CameraStatus::Ok)
         throw std::runtime_error("CCameraComponent: falha ao iniciar stream da camera.");
 
-    Falcor::Logger.log_info("[CCameraComponent] Camera inicializada e streaming.");
+    Falcor::Logger.log_info("[CCameraComponent] Camera inicializada. Pipeline pronto.");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// shutdown
+// ─────────────────────────────────────────────────────────────────────────────
 
 void CCameraComponent::shutdown()
 {
-    if (m_cameraImpl)
-    {
+    if (m_cameraImpl) {
         Falcor::Logger.log_info("[CCameraComponent] Encerrando camera...");
         m_cameraImpl->disconnect();
         m_cameraImpl.reset();
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getVideoBuffer
+// ─────────────────────────────────────────────────────────────────────────────
 
 std::optional<RawFrame> CCameraComponent::getVideoBuffer()
 {
@@ -115,16 +155,7 @@ std::optional<RawFrame> CCameraComponent::getVideoBuffer()
     CameraStatus status = m_cameraImpl->getRawFrame(frame);
 
     if (status == CameraStatus::Ok)
-    {
-        Falcor::Logger.log_info(
-            "[CCameraComponent] Frame #{} capturado: {} bytes, {}x{}",
-            frame.metadata.frameId,
-            frame.data.size(),
-            frame.width,
-            frame.height
-        );
         return frame;
-    }
 
     if (status == CameraStatus::Timeout)
         Falcor::Logger.log_warning("[CCameraComponent] Timeout ao capturar frame.");
@@ -133,6 +164,19 @@ std::optional<RawFrame> CCameraComponent::getVideoBuffer()
             static_cast<int>(status));
 
     return std::nullopt;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getDeltaImpl — acesso à API específica Delta
+// ─────────────────────────────────────────────────────────────────────────────
+
+ImplCameraComponent_DMV_SDK* CCameraComponent::getDeltaImpl() const
+{
+#ifdef FALCOR_HAVE_DELTA_SDK
+    if (m_selectedType == CameraType::DMV_CAMERA && m_cameraImpl)
+        return static_cast<ImplCameraComponent_DMV_SDK*>(m_cameraImpl.get());
+#endif
+    return nullptr;
 }
 
 } // namespace Falcor::Components
