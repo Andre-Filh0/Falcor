@@ -75,10 +75,22 @@ int main()
         // ── Camera ───────────────────────────────────────────────────────────
         // Criada apos configurar a pipeline: ao conectar, pode comecar a enviar
         // frames imediatamente sem perda.
+        //
+        // FALCOR_HAVE_DELTA_SDK é definido pelo CMake quando FALCOR_USE_DELTA_SDK=ON
+        // (preset linux-kria-release). No PC (linux-x64-debug/release) cai no mock
+        // automaticamente para permitir desenvolvimento sem câmera física.
+#ifdef FALCOR_HAVE_DELTA_SDK
         auto* cam = CreateComponent<CCameraComponent>(
             CCameraComponent::CameraType::DMV_CAMERA,
             config
         );
+#else
+        Falcor::Logger.log_info("[main] SDK Delta ausente — usando MOCK_CAMERA (PC dev).");
+        auto* cam = CreateComponent<CCameraComponent>(
+            CCameraComponent::CameraType::MOCK_CAMERA,
+            config
+        );
+#endif
 
         // ── Loop de captura ──────────────────────────────────────────────────
         // getVideoBuffer() bloqueia ate um frame estar disponivel.
